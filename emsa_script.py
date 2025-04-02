@@ -1,3 +1,13 @@
+ #  Copyright (C) 2025 Vojtech Klapetek.
+ #
+ #  This program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public
+ #  License as published by the Free Software Foundation; either version 3 of the License, or (at your option) any
+ #  later version.
+ #
+ #  This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ #  warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+ #  details.
+
 from ij import IJ, ImagePlus, ImageListener
 from ij.gui import RoiListener, Roi, Line, ProfilePlot, Plot
 from ij.plugin import ContrastEnhancer
@@ -425,7 +435,7 @@ def extract_background(bg_x, bg_sep, first_y, lane_length, lane_direction, lane_
 	
 	return a, b, c
 
-# based on Gwyddion, Copyright (C) David Necas (Yeti), Petr Klapetek
+# function based on Gwyddion level.c module, Copyright (C) David Necas (Yeti), Petr Klapetek
 # values: dict with for each absolute x, a list of values with relative y = 0 to y = len(list)
 def fit_plane(values):
 	sum_x = 0
