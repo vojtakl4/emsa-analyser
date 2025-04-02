@@ -12,8 +12,6 @@ The tool currently supports:
  - multiple areas of interest supported
  - analysis results may be saved as a `.txt` file
 
-This tool is provided as is, with no further plans of development from my side. You are however welcome to add your own features or reuse the code.
-
 ## Installing and running the script
 
 Download the `.py` file from this repository. In your Fiji, click on Plugins > Install (or hit Ctrl+Shift+M). In the window that opens, find the downloaded file, click Open, then Save in the second window that shows up. Restart Fiji. Great! You should now have the script locally installed.
