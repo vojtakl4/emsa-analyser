@@ -1,3 +1,5 @@
+# Release 1.0.0
+
 #  Copyright (C) 2025 Vojtech Klapetek.
 #
 #  This program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public
