@@ -1,6 +1,6 @@
 # A simple gel analyser for electromobility shift assay (EMSA)
 
-This Fiji script has been developed as a lightweight open source gel analyser since I couldn't find any available on the web (apart from ImageJ's default one, which is quite limited and somehow confusing without reading a tutorial).
+This [Fiji](https://imagej.net/software/fiji/) script has been developed as a lightweight open source gel analyser since I couldn't find any available on the web (apart from ImageJ's default one, which is quite limited and somehow confusing without reading a tutorial).
 
 The tool currently supports:
  - displaying gel files (so far tested on `.tif` files and `.gel` files from Typhoon FLA 9000 scanner accompanying software)
