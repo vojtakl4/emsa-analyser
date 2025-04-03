@@ -16,4 +16,4 @@ The tool currently supports:
 
 Download the `.py` file from this repository. In your Fiji, click on Plugins > Install (or hit Ctrl+Shift+M). In the window that opens, find the downloaded file, click Open, then Save in the second window that shows up. Restart Fiji. Great! You should now have the script locally installed.
 
-To use the script, first open the gel file you wish to analyse, then click on Plugins > emsa script (it's usually right at the end of the Plugins menu). Have fun!
+To use the script, first open the gel file you wish to analyse in your Fiji, then click on Plugins > emsa script (it's usually right at the end of the Plugins menu). Have fun!
