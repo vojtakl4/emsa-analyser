@@ -1,4 +1,4 @@
-# Release 1.0.0
+# Release 1.1.0-alpha
 
 #  Copyright (C) 2025 Vojtech Klapetek.
 #
@@ -23,6 +23,8 @@ from java.lang import RuntimeException
 # partly based on matplotlib Set1 color scheme
 COLORS = ["blue", "green", "red", "orange", "magenta", "#ffff33", "#a65628", "#f781bf", "#999999"]
 
+BG_TYPE_PLANE_FIT = "plane fit"
+BG_TYPE_LOCAL_MINIMA = "local minima"
 
 class FieldListener(DocumentListener, ActionListener):
 	def __init__(self, textfields, frame):
@@ -130,11 +132,13 @@ class FieldListener(DocumentListener, ActionListener):
 		self.lanePreview()
 		
 
-class BackgroundListener(DocumentListener):
-	def __init__(self, textfields, frame, fieldListener):
+class BackgroundListener(DocumentListener, ItemListener):
+	def __init__(self, textfields, frame, fieldListener, bg_type, bg_type_list):
 		self.textfields = textfields
 		self.frame = frame
 		self.fieldListener = fieldListener
+		self.bg_type = bg_type
+		self.bg_type_list = bg_type_list
 		
 		self.first_x = fieldListener.first_x
 		self.first_y = fieldListener.first_y
@@ -144,43 +148,49 @@ class BackgroundListener(DocumentListener):
 		self.lane_count = fieldListener.lane_count
 	
 	def updateFields(self):
-		try:
-			bg_x = int(self.textfields["Left background sample x"].getText())
-			bg_sep = int(self.textfields["Background sample separation"].getText())
-		except Exception:
-			return
-		
-		self.bg_x = bg_x
-		self.bg_sep = bg_sep
+		if self.bg_type == BG_TYPE_PLANE_FIT:
+			try:
+				bg_x = int(self.textfields["Left background sample x"].getText())
+				bg_sep = int(self.textfields["Background sample separation"].getText())
+			except Exception:
+				return
+			
+			self.bg_x = bg_x
+			self.bg_sep = bg_sep
+		if self.bg_type == BG_TYPE_LOCAL_MINIMA:
+			pass
 	
 	def backgroundPreview(self):
-		self.fieldListener.lanePreview()
-		
-		ip = self.fieldListener.imp.getProcessor().convertToRGB()
-
-		for i in range(2):
-			if self.fieldListener.lane_dir == "vertical":
-				roi = Line(self.bg_x + i * self.bg_sep, self.first_y,
-							self.bg_x + i * self.bg_sep, self.first_y + self.lane_length)
-			else:
-				roi = Line(self.bg_x + i * self.bg_sep, self.first_y - 0.5 * self.lane_width,
-							self.bg_x + i * self.bg_sep,
-							self.first_y + (self.lane_count - 1) * self.lane_sep + 0.5 * self.lane_width)
-
-			roi.setStrokeWidth(5) # TODO implement width setting for background as well?
-
-			ip.setRoi(roi)
-			ip.setColor("black")
-			ip.draw(roi)
+		if self.bg_type == BG_TYPE_PLANE_FIT:
+			self.fieldListener.lanePreview()
 			
-		self.fieldListener.imp.setProcessor(ip)
-		
-		self.fieldListener.plot.restorePlotObjects()
-		self.a, self.b, self.c = extract_background(self.bg_x, self.bg_sep, self.first_y, self.lane_length,
-													self.fieldListener.lane_dir, self.lane_count,
-													self.lane_sep, self.lane_width,
-													self.fieldListener.analysis_imp,
-													self.fieldListener.plot)
+			ip = self.fieldListener.imp.getProcessor().convertToRGB()
+	
+			for i in range(2):
+				if self.fieldListener.lane_dir == "vertical":
+					roi = Line(self.bg_x + i * self.bg_sep, self.first_y,
+								self.bg_x + i * self.bg_sep, self.first_y + self.lane_length)
+				else:
+					roi = Line(self.bg_x + i * self.bg_sep, self.first_y - 0.5 * self.lane_width,
+								self.bg_x + i * self.bg_sep,
+								self.first_y + (self.lane_count - 1) * self.lane_sep + 0.5 * self.lane_width)
+	
+				roi.setStrokeWidth(5) # TODO implement width setting for background as well?
+	
+				ip.setRoi(roi)
+				ip.setColor("black")
+				ip.draw(roi)
+				
+			self.fieldListener.imp.setProcessor(ip)
+			
+			self.fieldListener.plot.restorePlotObjects()
+			self.a, self.b, self.c = extract_background(self.bg_x, self.bg_sep, self.first_y, self.lane_length,
+														self.fieldListener.lane_dir, self.lane_count,
+														self.lane_sep, self.lane_width,
+														self.fieldListener.analysis_imp,
+														self.fieldListener.plot)
+		if self.bg_type == BG_TYPE_LOCAL_MINIMA:
+			pass
 		
 	def removeBackground(self, event):
 		imp = self.fieldListener.analysis_imp
@@ -240,6 +250,16 @@ class BackgroundListener(DocumentListener):
 	
 	def insertUpdate(self, event):
 		self.changedUpdate(event)
+		
+	# this function listens to background subtraction method switch menu
+	def itemStateChanged(self, event):
+		if event.getStateChange() == ItemEvent.SELECTED:
+			selected_bg_type = self.bg_type_list[event.getItemSelectable().getSelectedIndex()]
+			if selected_bg_type != self.bg_type:
+				self.fieldListener.lanePreview()
+				self.fieldListener.plot.restorePlotObjects()
+				self.fieldListener.plot.update()
+				background_window(self.frame, self.fieldListener, selected_bg_type)
 		
 
 class MeasurementListener(DocumentListener, ItemListener):
@@ -582,7 +602,7 @@ def selection_window():
 	field_listener.lanePreview()
 
 
-def background_window(frame, field_listener):
+def background_window(frame, field_listener, bg_type=BG_TYPE_PLANE_FIT):
 	frame.getContentPane().removeAll()
 	frame.setTitle("Background selection")
 	panel = JPanel()
@@ -597,49 +617,90 @@ def background_window(frame, field_listener):
   	gc.gridheight = 1
   	gc.fill = GBC.NONE
   	
-  	gc.gridwidth = 2
-  	label_text = "Place the black lines on the lane overview image so that they are located outside of any gel lane, one to the left from your selection lanes, one to the right. These lines are then used to fit a background plane, which will be subtracted from the data. You may see a preview of the background for the two lines in the gel profile graph."
-  	label = JLabel("<html>" + label_text + "</html>")
-  	label = JTextArea(label_text, 6, 30)
-  	label.setLineWrap(True)
-  	label.setWrapStyleWord(True)
-  	label.setEditable(False)
-  	gb.setConstraints(label, gc)
-  	panel.add(label)
-  	
-  	gc.gridwidth = 1
-  	gc.gridy += 1
-  	
   	textfields = {}
-	bg_listener = BackgroundListener(textfields, frame, field_listener)
+  	bg_type_list = [BG_TYPE_PLANE_FIT, BG_TYPE_LOCAL_MINIMA] # if changed, edit the corresponding combo box!
+	bg_listener = BackgroundListener(textfields, frame, field_listener, bg_type, bg_type_list)
+  	
+	gc.anchor = GBC.EAST  
+  	label = JLabel("Background method:")
+	gb.setConstraints(label, gc) 
+	panel.add(label)
 	
-	if field_listener.lane_dir == "vertical":
-		background_defaults = {
-			"Left background sample x": int(field_listener.first_x - 0.5 * field_listener.lane_sep),
-			"Background sample separation": field_listener.lane_count * field_listener.lane_sep
-			}
-	else:
-		background_defaults = {
-			"Left background sample x": int(field_listener.first_x - 0.5 * field_listener.lane_sep),
-			"Background sample separation": field_listener.lane_length + field_listener.lane_sep}
+	gc.gridx = 1
+	gc.anchor = GBC.WEST
+	
+	combobox = JComboBox(["Plane fit", "Join local minima"]) # if changed, edit bg_type_list above!
+	gb.setConstraints(combobox, gc)
+	panel.add(combobox)
+	if bg_type == BG_TYPE_LOCAL_MINIMA:
+		combobox.setSelectedIndex(1)
+	#ms_listener.area_selector = combobox
+	combobox.addItemListener(bg_listener)
+  	
+  	gc.gridy += 1
+  	gc.gridx = 0
+  	gc.anchor = GBC.EAST
+  	
+  	
+  	if bg_type == BG_TYPE_PLANE_FIT:
+  		gc.gridwidth = 2
+  		
+	  	label_text = "Place the black lines on the lane overview image so that they are located outside of any gel lane, one to the left from your selection lanes, one to the right. These lines are then used to fit a background plane, which will be subtracted from the data. You may see a preview of the background for the two lines in the gel profile graph."
+	  	#label = JLabel("<html>" + label_text + "</html>")
+	  	label = JTextArea(label_text, 6, 30)
+	  	label.setLineWrap(True)
+	  	label.setWrapStyleWord(True)
+	  	label.setEditable(False)
+	  	gb.setConstraints(label, gc)
+	  	panel.add(label)
+	  	
+	  	gc.gridwidth = 1
+	  	gc.gridy += 1
+	  	
 		
-
-	for title in ["Left background sample x", "Background sample separation"]:  
-	    gc.gridx = 0  
-	    gc.anchor = GBC.EAST  
-	    label = JLabel(title + ": ")  
-	    gb.setConstraints(label, gc)
-	    panel.add(label)
-
-	    gc.gridx = 1
-	    gc.anchor = GBC.WEST
-	    text = str(background_defaults[title]) 
-	    textfield = JTextField(text, 10)
-	    textfields[title] = textfield
-	    gb.setConstraints(textfield, gc)
-	    textfield.getDocument().addDocumentListener(bg_listener)
-	    panel.add(textfield)
-	    gc.gridy += 1
+		if field_listener.lane_dir == "vertical":
+			background_defaults = {
+				"Left background sample x": int(field_listener.first_x - 0.5 * field_listener.lane_sep),
+				"Background sample separation": field_listener.lane_count * field_listener.lane_sep
+				}
+		else:
+			background_defaults = {
+				"Left background sample x": int(field_listener.first_x - 0.5 * field_listener.lane_sep),
+				"Background sample separation": field_listener.lane_length + field_listener.lane_sep}
+			
+	
+		for title in ["Left background sample x", "Background sample separation"]:  
+		    gc.gridx = 0  
+		    gc.anchor = GBC.EAST  
+		    label = JLabel(title + ": ")  
+		    gb.setConstraints(label, gc)
+		    panel.add(label)
+	
+		    gc.gridx = 1
+		    gc.anchor = GBC.WEST
+		    text = str(background_defaults[title]) 
+		    textfield = JTextField(text, 10)
+		    textfields[title] = textfield
+		    gb.setConstraints(textfield, gc)
+		    textfield.getDocument().addDocumentListener(bg_listener)
+		    panel.add(textfield)
+		    gc.gridy += 1
+		    
+		    
+	if bg_type == BG_TYPE_LOCAL_MINIMA:
+  		gc.gridwidth = 2
+  		
+  		label_text = "Isn't it a nice day after all?"
+	  	#label = JLabel("<html>" + label_text + "</html>")
+	  	label = JTextArea(label_text, 6, 30)
+	  	label.setLineWrap(True)
+	  	label.setWrapStyleWord(True)
+	  	label.setEditable(False)
+	  	gb.setConstraints(label, gc)
+	  	panel.add(label)
+	  	
+	  	gc.gridwidth = 1
+	  	gc.gridy += 1	
 
 	gc.gridx = 0
 	button = JButton("<< Back", actionPerformed=bg_listener.revertToPrevStep)
