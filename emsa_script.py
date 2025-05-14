@@ -28,6 +28,34 @@ COLORS = ["blue", "green", "red", "orange", "magenta", "#ffff33", "#a65628", "#f
 BG_TYPE_PLANE_FIT = "plane fit"
 BG_TYPE_LOCAL_MINIMA = "local minima"
 
+INPUT_SEL_FIRST_X = "first_x"
+INPUT_SEL_FIRST_Y = "first_y"
+INPUT_SEL_LANE_LENGTH = "lane_length"
+INPUT_SEL_LANE_SEP = "lane_sep"
+INPUT_SEL_LANE_WIDTH = "lane_width"
+INPUT_SEL_LANE_COUNT = "lane_count"
+INPUT_BG_LEFT_X = "bg_left_x"
+INPUT_BG_SEP = "bg_sep"
+INPUT_BG_BAND_WIDTH = "band_width"
+INPUT_BG_BAND_OFFSET = "band_offset"
+INPUT_MSR_LEFT_BOUND = "left_bound"
+INPUT_MSR_RIGHT_BOUND = "right_bound"
+
+INPUT_LABELS = {
+	INPUT_SEL_FIRST_X: "First lane x",
+	INPUT_SEL_FIRST_Y: "First lane y",
+	INPUT_SEL_LANE_LENGTH: "Lane length",
+	INPUT_SEL_LANE_SEP: "Lane separation",
+	INPUT_SEL_LANE_WIDTH: "Lane width",
+	INPUT_SEL_LANE_COUNT: "Lane count",
+	INPUT_BG_LEFT_X: "Left background sample x",
+	INPUT_BG_SEP: "Background sample separation",
+	INPUT_BG_BAND_WIDTH: "Band width",
+	INPUT_BG_BAND_OFFSET: "Band offset",
+	INPUT_MSR_LEFT_BOUND: "Left peak sum border",
+	INPUT_MSR_RIGHT_BOUND: "Right peak sum border"
+}
+
 class FieldListener(DocumentListener, ActionListener):
 	def __init__(self, textfields, frame):
 		self.textfields = textfields
@@ -54,12 +82,12 @@ class FieldListener(DocumentListener, ActionListener):
 		
 	def updateFields(self):
 		try:
-			first_x = int(self.textfields["First lane x"].getText())
-			first_y = int(self.textfields["First lane y"].getText())
-			lane_length = int(self.textfields["Lane length"].getText())
-			lane_sep = int(self.textfields["Lane separation"].getText())
-			lane_width = int(self.textfields["Lane width"].getText())
-			lane_count = int(self.textfields["Lane count"].getText())
+			first_x = int(self.textfields[INPUT_SEL_FIRST_X].getText())
+			first_y = int(self.textfields[INPUT_SEL_FIRST_Y].getText())
+			lane_length = int(self.textfields[INPUT_SEL_LANE_LENGTH].getText())
+			lane_sep = int(self.textfields[INPUT_SEL_LANE_SEP].getText())
+			lane_width = int(self.textfields[INPUT_SEL_LANE_WIDTH].getText())
+			lane_count = int(self.textfields[INPUT_SEL_LANE_COUNT].getText())
 		except Exception:
 			return
 			
@@ -153,8 +181,8 @@ class BackgroundListener(DocumentListener, ItemListener):
 	def updateFields(self):
 		if self.bg_type == BG_TYPE_PLANE_FIT:
 			try:
-				bg_x = int(self.textfields["Left background sample x"].getText())
-				bg_sep = int(self.textfields["Background sample separation"].getText())
+				bg_x = int(self.textfields[INPUT_BG_LEFT_X].getText())
+				bg_sep = int(self.textfields[INPUT_BG_SEP].getText())
 			except Exception:
 				return
 			
@@ -162,8 +190,8 @@ class BackgroundListener(DocumentListener, ItemListener):
 			self.bg_sep = bg_sep
 		if self.bg_type == BG_TYPE_LOCAL_MINIMA:
 			try:
-				band_width = int(self.textfields["Band width"].getText())
-				band_offset = int(self.textfields["Band offset"].getText())
+				band_width = int(self.textfields[INPUT_BG_BAND_WIDTH].getText())
+				band_offset = int(self.textfields[INPUT_BG_BAND_OFFSET].getText())
 			except Exception:
 				return
 			
@@ -205,46 +233,7 @@ class BackgroundListener(DocumentListener, ItemListener):
 			_, plvalues = analyze(self.first_x, self.first_y, self.lane_length,
 											self.lane_sep, self.lane_width, self.lane_count,
 											self.lane_dir, self.fieldListener.analysis_imp)
-											
-			#ydata = plvalues[0]
-			""""ydata_filtered, peaks = find_peaks(ydata)
-			self.fieldListener.plot.setColor("black")
-			self.fieldListener.plot.add("line", ydata_filtered)"""
-			
-			#print(sorted([peak.height for peak in peaks]))
 
-			# select peaks based on a combination of prominence, height and smoothing?
-			#min_prominence = 0
-			#min_height = 0
-			#peak_xs = [peak.i for peak in peaks if peak.prominence > min_prominence and peak.height > min_height]
-			#peak_ys = [plvalues[0][x] for x in peak_xs]
-			#self.fieldListener.plot.addPoints(peak_xs, peak_ys, Plot.CIRCLE)
-			""""self.fieldListener.plot.setColor("ebc034")
-			for peak in peaks:
-				xmin = peak.xleft
-				xmax = peak.xright
-				ymin = min(ydata[peak.ileft], ydata[peak.iright])
-				ymax = ydata[peak.i]
-				self.fieldListener.plot.drawLine(xmin, ymin, xmin, ymax)
-				self.fieldListener.plot.drawLine(xmin, ymax, xmax, ymax)
-				self.fieldListener.plot.drawLine(xmax, ymax, xmax, ymin)
-				self.fieldListener.plot.drawLine(xmax, ymin, xmin, ymin)
-				"""
-			""""multipeaks = merge_peaks(peaks, ydata)
-			self.fieldListener.plot.setColor("blue")
-			for peak in multipeaks:
-				xmin = peak.xleft
-				xmax = peak.xright
-				ymin = min(ydata[peak.ileft], ydata[peak.iright])
-				ymax = ydata[peak.i]
-				self.fieldListener.plot.drawLine(xmin, ymin, xmin, ymax)
-				self.fieldListener.plot.drawLine(xmin, ymax, xmax, ymax)
-				self.fieldListener.plot.drawLine(xmax, ymax, xmax, ymin)
-				self.fieldListener.plot.drawLine(xmax, ymin, xmin, ymin)"""
-			
-			#self.fieldListener.plot.setColor("green")
-			#band_offset = 130
-			#band_width = 160
 			self.bg_lines_xs = []
 			self.bg_lines_ys = []
 			for i in range(len(plvalues)):
@@ -259,13 +248,11 @@ class BackgroundListener(DocumentListener, ItemListener):
 				while current_x <= len(ydata):
 					min_x = max(current_x, 0)
 					min_y = ydata[min_x]
-					print "c_x", current_x, "min_test_x", current_x, "max_test_x", min(current_x + self.band_width, len(ydata) - 1)
 					for test_x in range(current_x ,
 										min(current_x + self.band_width, len(ydata) - 1)):
 						if ydata[max(test_x, 0)] < min_y:
 							min_x = test_x
 							min_y = ydata[test_x]
-					print "loc_min", min_x
 					point_xs.append(min_x)
 					point_ys.append(min_y)
 					current_x += self.band_width
@@ -285,15 +272,7 @@ class BackgroundListener(DocumentListener, ItemListener):
 				current_x += self.band_width
 			
 			self.fieldListener.plot.update()
-			#minima = find_local_minima(plvalues[0])
-			#minima_y = [plvalues[0][x] for x in minima]
-			#self.fieldListener.plot.addPoints(minima, minima_y, Plot.CIRCLE)
-			#print len(minima)
-			
-			#cf = CurveFitter(minima, minima_y)
-			#cf.doFit(CurveFitter.POLY3)
-			#fit_values = [cf.f(x) for x in range(len(plvalues[0]))]
-			#self.fieldListener.plot.add("line", fit_values)
+
 		
 	def removeBackground(self, event):
 		imp = self.fieldListener.analysis_imp
@@ -339,8 +318,6 @@ class BackgroundListener(DocumentListener, ItemListener):
 				for j in range(len(values)):
 					if j > bg_line_xs[bg_segment_i]:
 						bg_segment_i += 1
-					print "j", j, "bg_x[i-1]", bg_line_xs[bg_segment_i-1], "bg_x[i]", bg_line_xs[bg_segment_i], "bg_y[i-1]", bg_line_ys[bg_segment_i - 1], "bg_y[i]", bg_line_ys[bg_segment_i], "shift", (1 - (j - bg_line_xs[bg_segment_i - 1])/float(bg_line_xs[bg_segment_i] - bg_line_xs[bg_segment_i - 1]))*(bg_line_ys[bg_segment_i - 1] - bg_line_ys[bg_segment_i]), "perc_i-1_to_i", (1 - (j - bg_line_xs[bg_segment_i - 1])/float(bg_line_xs[bg_segment_i] - bg_line_xs[bg_segment_i - 1]))
-					print "orig_value", values[j], "new_value", values[j]  - bg_line_ys[bg_segment_i - 1] - (1 - (j - bg_line_xs[bg_segment_i - 1])/float(bg_line_xs[bg_segment_i] - bg_line_xs[bg_segment_i - 1]))*(bg_line_ys[bg_segment_i - 1] - bg_line_ys[bg_segment_i])
 					values[j] = values[j]  - bg_line_ys[bg_segment_i] - (1 - (j - bg_line_xs[bg_segment_i - 1])/float(bg_line_xs[bg_segment_i] - bg_line_xs[bg_segment_i - 1]))*(bg_line_ys[bg_segment_i - 1] - bg_line_ys[bg_segment_i])
 				plot.setColor(COLORS[i % len(COLORS)])
 				plot.add("line", values)
@@ -409,8 +386,8 @@ class MeasurementListener(DocumentListener, ItemListener):
 	
 	def updateFields(self):
 		try:
-			left_bound = int(self.textfields["Left peak sum border"].getText())
-			right_bound = int(self.textfields["Right peak sum border"].getText())
+			left_bound = int(self.textfields[INPUT_MSR_LEFT_BOUND].getText())
+			right_bound = int(self.textfields[INPUT_MSR_RIGHT_BOUND].getText())
 		except Exception:
 			return
 		
@@ -519,8 +496,8 @@ class MeasurementListener(DocumentListener, ItemListener):
 		if event.getStateChange() == ItemEvent.SELECTED:
 			self.selected_i = event.getItemSelectable().getSelectedIndex()
 			lb, rb = self.selectionList[self.selected_i][0], self.selectionList[self.selected_i][1]
-			self.textfields["Left peak sum border"].setText(str(lb))
-			self.textfields["Right peak sum border"].setText(str(rb))
+			self.textfields[INPUT_MSR_LEFT_BOUND].setText(str(lb))
+			self.textfields[INPUT_MSR_RIGHT_BOUND].setText(str(rb))
 			
 			self.sumProfiles()
 
@@ -629,198 +606,6 @@ def fit_plane(values):
 	return a, b, c
 
 
-class Peak():
-	def __init__(self):
-		pass
-	""""def __init__(self, prominence, x, height, area, width, i):
-		self.prominence = prominence
-		self.x = x
-		self. height = height
-		self.area = area
-		self.width = width
-		self.i = i"""
-
-# based on Gwyddion peaks module, (c) David Nečas
-# values: a list of y values to find peaks on
-# xdata: corresponding x values; if not set, assumed xdata are 1 to len(values)
-# returns a list of Peak objects
-def find_peaks(values, xdata = None):
-	n = len(values)
-	peaks = []
-	ydata = values
-	if xdata == None:
-		xdata = list(range(n))
-	
-	# perform simple closing
-	ydata_filtered = ydata
-	ydata_filtered2 = [0 for i in range(n)]
-	for i in range(1, int(log(n) - 0.4)):
-		ydata_filtered2[0] = ydata_filtered[0]
-		for i in range(1, n - 1):
-			y = ydata_filtered[i]
-			yl = 0.5*(ydata_filtered[i + 1] + ydata_filtered[i - 1])
-			ydata_filtered2[i] = max(y, yl)
-		ydata_filtered2[-1] = ydata_filtered[-1]
-		ydata_filtered = ydata_filtered2
-	
-	# find local maxima
-	flatsize = 0
-	for i in range(1, n - 1):
-		y = ydata_filtered[i]
-		yp = ydata_filtered[i - 1]
-		yn = ydata_filtered[i + 1]
-		
-		# normal cases
-		if (y < yp or y < yn):
-			continue
-		if (y > yp and y > yn):
-			peak = Peak()
-			peak.i = i
-			peaks.append(peak)
-		
-		# flat tops
-		if (y == yn and y > yp):
-			flatsize = 0
-		elif (y == yn and y == yp):
-			flatsize += 1
-		elif (y == yp and y > yn):
-			peak = Peak()
-			peak.i = i - flatsize/2
-			peaks.append(peak)
-		
-	# analyse prominence
-	for k in range(0, len(peaks)):
-		peak = peaks[k]
-		
-		# find the peak extents
-		ileft = peak.i - 1
-		while(ileft > 0 and ydata_filtered[ileft - 1] == ydata_filtered[ileft]):
-			ileft = ileft - 1
-		
-		while (ileft > 0 and ydata_filtered[ileft] > ydata_filtered[ileft - 1]):
-			ileft = ileft - 1
-		yleft = ydata[ileft]
-		
-		iright = peak.i + 1
-		while(iright < n - 1 and ydata_filtered[iright + 1] == ydata_filtered[iright]):
-			iright = iright + 1
-		
-		while (iright < n - 1 and ydata_filtered[iright] > ydata_filtered[iright + 1]):
-			iright = iright + 1
-		yright = ydata[iright]
-		
-		peak.ileft = ileft
-		peak.iright = iright
-		peak.xleft = xdata[ileft]
-		peak.xright = xdata[iright]
-		
-		# calculate height, area etc.
-		arealeft = 0
-		arearight = 0
-		disp2left = 0
-		disp2right = 0
-		peak.x = xdata[peak.i]
-		for i in range(ileft, peak.i):
-			xl = xdata[i] - peak.x
-			xr = xdata[i + 1] - peak.x
-			yl = max(ydata[i] - yleft, 0)
-			yr = max(ydata[i + 1] - yleft, 0)
-			arealeft += (xr - xl)*(yl + yr)/2
-			disp2left += (xr - xl)*((3*yr + yl)*xr*xr + 2*(yl + yr)*xr*xl + (yr + 3*yl)*xl*xl)/12
-		for i in range(iright, peak.i, -1):
-			xl = xdata[i - 1] - peak.x
-			xr = xdata[i] - peak.x
-			yl = max(ydata[i - 1] - yright, 0)
-			yr = max(ydata[i] - yright, 0)
-			arearight += (xr - xl)*(yl + yr)/2
-			disp2right += (xr - xl)*((3*yr + yl)*xr*xr + 2*(yl + yr)*xr*xl + (yr + 3*yl)*xl*xl)/12
-		
-		peak.area = arealeft + arearight
-		if (arealeft > 0 and arearight > 0):
-			peak.width = sqrt(0.5*(disp2left/arealeft + disp2right/arearight))
-		elif (arealeft > 0):
-			peak.width = sqrt(disp2left/arealeft)
-		elif (arearight > 0):
-			peak.width = sqrt(disp2right/arearight)
-		else:
-			peak.width = 0
-		
-		i = peak.i
-		peak.height = ydata[i] - 0.5*(yleft + yright)
-		if (ydata[i] > ydata[i - 1] or ydata[i] > ydata[i + 1]):
-			epsp = ydata[i] - ydata[i + 1]
-			epsm = ydata[i] + ydata[i - 1]
-			dp = xdata[i + 1] - xdata[i]
-			dm = xdata[i] - xdata[i - 1]
-			xdiff = 0.5*(epsm*dp*dp - epsp*dm*dm)/(epsm*dp + epsp*dm)
-			if (peak.x + xdiff < xdata[i + 1] and peak.x + xdiff > xdata[i + 1]):
-				peak.x += xdiff
-	
-	k = 0
-	while k < len(peaks):
-		peak = peaks[k]
-		xleft = peaks[k - 1].x if k > 0 else xdata[0]
-		xright = peaks[k + 1].x if k + 1 < len(peaks) else xdata[-1]
-		
-		if peak.height <= 0 or peak.area <= 0 or peak.x >= xright or peak.x <= xleft:
-			peaks.pop(k)
-		else:
-			peak.prominence = log(peak.height * peak.area * (xright - peak.x) * (peak.x - xleft))
-			k += 1
-
-	return ydata_filtered, peaks
-
-# merges selected peaks from a list of Peak objects to generate multipeaks
-# that should correspond to complete areas of increased density on a gel
-def merge_peaks(peaks, ydata, min_height=1.0):
-	left_sides_ixs = []
-	right_sides_ixs = []
-	for peak_ix in range(len(peaks)):
-		peak = peaks[peak_ix]
-		left_height = ydata[peak.i] - ydata[peak.ileft]
-		right_height = ydata[peak.i] - ydata[peak.iright]
-		if left_height > min_height:
-			left_sides_ixs.append(peak_ix)
-		if right_height > min_height:
-			right_sides_ixs.append(peak_ix)
-	
-	return []
-
-# TODO delete if unused
-# min_h_diff: how much difference in value must be at least between the minimum and one of surrounding
-# 			local maxima for it to be registered
-def find_local_minima(values, min_val_diff=0):
-	minima = []
-	if values[0] < values[1]:
-		i = 0
-		k = i + 1
-		while k + 1 < len(values) and values[k + 1] > values[k]:
-			k += 1
-		if values[k] - values[i] > min_val_diff:
-			minima.append(i)
-	for i in range(1, len(values) - 1):
-		if values[i - 1] > values[i] and values[i] <= values[i + 1]:
-			k = i - 1
-			while k - 1 > 0 and values[k - 1] > values[k]:
-				k -= 1
-			val_diff = values[k] - values[i]
-			
-			k = i + 1
-			while k + 1 < len(values) and values[k + 1] > values[k]:
-				k += 1
-			val_diff = max(val_diff, values[k] - values[i])
-			
-			if val_diff > min_val_diff:
-				minima.append(i)
-	if values[-1] < values[-2]:
-		i = len(values) - 1
-		k = i - 1
-		while k - 1 > 0 and values[k - 1] > values[k]:
-			k -= 1
-		if values[k] - values[i] > min_val_diff:
-			minima.append(i)
-	return minima
-
 
 def selection_window():
 	try:
@@ -845,8 +630,8 @@ def selection_window():
   	textfields = {}
   	field_listener = FieldListener(textfields, frame)
   	
-  	analysis_defaults = {"First lane x": 815, "First lane y": 50, "Lane length": 950,
-					"Lane separation": 165, "Lane width": 50, "Lane count": 5}
+  	analysis_defaults = {INPUT_SEL_FIRST_X: 815, INPUT_SEL_FIRST_Y: 50, INPUT_SEL_LANE_LENGTH: 950,
+					INPUT_SEL_LANE_SEP: 165, INPUT_SEL_LANE_WIDTH: 50, INPUT_SEL_LANE_COUNT: 5}
   	
   	button = JButton("Auto-adjust contrast", actionPerformed=field_listener.enhanceContrast)
 	gb.setConstraints(button, gc)
@@ -887,18 +672,18 @@ def selection_window():
 	gc.gridwidth = 1
 	gc.gridy += 1
 
-	for title in ["First lane x", "First lane y", "Lane length", "Lane separation", "Lane width", "Lane count"]:  
+	for field in [INPUT_SEL_FIRST_X, INPUT_SEL_FIRST_Y, INPUT_SEL_LANE_LENGTH, INPUT_SEL_LANE_SEP, INPUT_SEL_LANE_WIDTH, INPUT_SEL_LANE_COUNT]:  
 	    gc.gridx = 0  
 	    gc.anchor = GBC.EAST  
-	    label = JLabel(title + ": ")  
+	    label = JLabel(INPUT_LABELS[field] + ": ")  
 	    gb.setConstraints(label, gc)
 	    panel.add(label)
 	    
 	    gc.gridx = 1
 	    gc.anchor = GBC.WEST
-	    text = str(analysis_defaults[title]) 
+	    text = str(analysis_defaults[field]) 
 	    textfield = JTextField(text, 10)
-	    textfields[title] = textfield
+	    textfields[field] = textfield
 	    gb.setConstraints(textfield, gc)
 	    textfield.getDocument().addDocumentListener(field_listener)
 	    panel.add(textfield)
@@ -977,27 +762,27 @@ def background_window(frame, field_listener, bg_type=BG_TYPE_PLANE_FIT):
 		
 		if field_listener.lane_dir == "vertical":
 			background_defaults = {
-				"Left background sample x": int(field_listener.first_x - 0.5 * field_listener.lane_sep),
-				"Background sample separation": field_listener.lane_count * field_listener.lane_sep
+				INPUT_BG_LEFT_X: int(field_listener.first_x - 0.5 * field_listener.lane_sep),
+				INPUT_BG_SEP: field_listener.lane_count * field_listener.lane_sep
 				}
 		else:
 			background_defaults = {
-				"Left background sample x": int(field_listener.first_x - 0.5 * field_listener.lane_sep),
-				"Background sample separation": field_listener.lane_length + field_listener.lane_sep}
+				INPUT_BG_LEFT_X: int(field_listener.first_x - 0.5 * field_listener.lane_sep),
+				INPUT_BG_SEP: field_listener.lane_length + field_listener.lane_sep}
 			
 	
-		for title in ["Left background sample x", "Background sample separation"]:  
+		for field in [INPUT_BG_LEFT_X, INPUT_BG_SEP]:  
 		    gc.gridx = 0  
 		    gc.anchor = GBC.EAST  
-		    label = JLabel(title + ": ")  
+		    label = JLabel(INPUT_LABELS[field] + ": ")  
 		    gb.setConstraints(label, gc)
 		    panel.add(label)
 	
 		    gc.gridx = 1
 		    gc.anchor = GBC.WEST
-		    text = str(background_defaults[title]) 
+		    text = str(background_defaults[field]) 
 		    textfield = JTextField(text, 10)
-		    textfields[title] = textfield
+		    textfields[field] = textfield
 		    gb.setConstraints(textfield, gc)
 		    textfield.getDocument().addDocumentListener(bg_listener)
 		    panel.add(textfield)
@@ -1020,22 +805,22 @@ def background_window(frame, field_listener, bg_type=BG_TYPE_PLANE_FIT):
 	  	gc.gridy += 1
 	  	
 	  	background_defaults = {
-	  		"Band width": 160,
-	  		"Band offset": 0
+	  		INPUT_BG_BAND_WIDTH: 160,
+	  		INPUT_BG_BAND_OFFSET: 0
 	  	}
 	  	
-	  	for title in ["Band width", "Band offset"]:  
+	  	for field in [INPUT_BG_BAND_WIDTH, INPUT_BG_BAND_OFFSET]:  
 		    gc.gridx = 0  
 		    gc.anchor = GBC.EAST  
-		    label = JLabel(title + ": ")  
+		    label = JLabel(INPUT_LABELS[field] + ": ")  
 		    gb.setConstraints(label, gc)
 		    panel.add(label)
 	
 		    gc.gridx = 1
 		    gc.anchor = GBC.WEST
-		    text = str(background_defaults[title]) 
+		    text = str(background_defaults[field]) 
 		    textfield = JTextField(text, 10)
-		    textfields[title] = textfield
+		    textfields[field] = textfield
 		    gb.setConstraints(textfield, gc)
 		    textfield.getDocument().addDocumentListener(bg_listener)
 		    panel.add(textfield)
@@ -1095,22 +880,22 @@ def measurement_window(frame, background_listener):
 	
 
 	measurement_defaults = {
-		"Left peak sum border": 0,
-		"Right peak sum border": max_length
+		INPUT_MSR_LEFT_BOUND: 0,
+		INPUT_MSR_RIGHT_BOUND: max_length
 		}
 	
-	for title in ["Left peak sum border", "Right peak sum border"]:  
+	for field in [INPUT_MSR_LEFT_BOUND, INPUT_MSR_RIGHT_BOUND]:  
 	    gc.gridx = 0  
 	    gc.anchor = GBC.EAST  
-	    label = JLabel(title + ": ")  
+	    label = JLabel(INPUT_LABELS[field] + ": ")  
 	    gb.setConstraints(label, gc) 
 	    panel.add(label)  
 
 	    gc.gridx = 1
 	    gc.anchor = GBC.WEST
-	    text = str(measurement_defaults[title]) 
+	    text = str(measurement_defaults[field]) 
 	    textfield = JTextField(text, 10)
-	    textfields[title] = textfield
+	    textfields[field] = textfield
 	    gb.setConstraints(textfield, gc)
 	    textfield.getDocument().addDocumentListener(ms_listener)
 	    panel.add(textfield)
