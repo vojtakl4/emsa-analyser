@@ -1,4 +1,4 @@
-# Release 1.1.0-alpha
+# Release 1.1.0
 
 #  Copyright (C) 2025 Vojtech Klapetek.
 #
