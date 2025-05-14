@@ -7,7 +7,7 @@ The tool currently supports:
  - multiple vertical or horizontal lane selection
  - adjustable lane width
  - optional auto-adjustment of contrast to make features on a gel easier to see (intensity values used for analysis are not affected)
- - background subtraction with a plane-fitting method
+ - background subtraction with a global plane-fitting method or a per lane local minima linear connection method
  - analysis of areas of interest on the selected lanes as a sum of intensity peaks in a region after background subtraction
  - multiple areas of interest supported
  - analysis results may be saved as a `.txt` file
