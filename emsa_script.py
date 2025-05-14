@@ -1,4 +1,4 @@
-# Release 1.0.0
+# Release 1.1.0
 
 #  Copyright (C) 2025 Vojtech Klapetek.
 #
@@ -14,15 +14,47 @@ from ij import IJ, ImagePlus, ImageListener
 from ij.gui import RoiListener, Roi, Line, ProfilePlot, Plot
 from ij.plugin import ContrastEnhancer
 from ij.io import SaveDialog
+from ij.measure import CurveFitter
 from javax.swing import JFrame, JPanel, JButton, JOptionPane, JLabel, JTextField, BorderFactory, JTextPane, JRadioButton, ButtonGroup, JComboBox, JTextArea
 from java.awt import GridBagLayout, GridBagConstraints as GBC
 from javax.swing.event import DocumentListener
 from java.awt.event import ActionListener, ItemListener, ItemEvent
 from java.lang import RuntimeException
+from math import log, sqrt
 
 # partly based on matplotlib Set1 color scheme
 COLORS = ["blue", "green", "red", "orange", "magenta", "#ffff33", "#a65628", "#f781bf", "#999999"]
 
+BG_TYPE_PLANE_FIT = "plane fit"
+BG_TYPE_LOCAL_MINIMA = "local minima"
+
+INPUT_SEL_FIRST_X = "first_x"
+INPUT_SEL_FIRST_Y = "first_y"
+INPUT_SEL_LANE_LENGTH = "lane_length"
+INPUT_SEL_LANE_SEP = "lane_sep"
+INPUT_SEL_LANE_WIDTH = "lane_width"
+INPUT_SEL_LANE_COUNT = "lane_count"
+INPUT_BG_LEFT_X = "bg_left_x"
+INPUT_BG_SEP = "bg_sep"
+INPUT_BG_BAND_WIDTH = "band_width"
+INPUT_BG_BAND_OFFSET = "band_offset"
+INPUT_MSR_LEFT_BOUND = "left_bound"
+INPUT_MSR_RIGHT_BOUND = "right_bound"
+
+INPUT_LABELS = {
+	INPUT_SEL_FIRST_X: "First lane x",
+	INPUT_SEL_FIRST_Y: "First lane y",
+	INPUT_SEL_LANE_LENGTH: "Lane length",
+	INPUT_SEL_LANE_SEP: "Lane separation",
+	INPUT_SEL_LANE_WIDTH: "Lane width",
+	INPUT_SEL_LANE_COUNT: "Lane count",
+	INPUT_BG_LEFT_X: "Left background sample x",
+	INPUT_BG_SEP: "Background sample separation",
+	INPUT_BG_BAND_WIDTH: "Band width",
+	INPUT_BG_BAND_OFFSET: "Band offset",
+	INPUT_MSR_LEFT_BOUND: "Left peak sum border",
+	INPUT_MSR_RIGHT_BOUND: "Right peak sum border"
+}
 
 class FieldListener(DocumentListener, ActionListener):
 	def __init__(self, textfields, frame):
@@ -50,12 +82,12 @@ class FieldListener(DocumentListener, ActionListener):
 		
 	def updateFields(self):
 		try:
-			first_x = int(self.textfields["First lane x"].getText())
-			first_y = int(self.textfields["First lane y"].getText())
-			lane_length = int(self.textfields["Lane length"].getText())
-			lane_sep = int(self.textfields["Lane separation"].getText())
-			lane_width = int(self.textfields["Lane width"].getText())
-			lane_count = int(self.textfields["Lane count"].getText())
+			first_x = int(self.textfields[INPUT_SEL_FIRST_X].getText())
+			first_y = int(self.textfields[INPUT_SEL_FIRST_Y].getText())
+			lane_length = int(self.textfields[INPUT_SEL_LANE_LENGTH].getText())
+			lane_sep = int(self.textfields[INPUT_SEL_LANE_SEP].getText())
+			lane_width = int(self.textfields[INPUT_SEL_LANE_WIDTH].getText())
+			lane_count = int(self.textfields[INPUT_SEL_LANE_COUNT].getText())
 		except Exception:
 			return
 			
@@ -130,11 +162,13 @@ class FieldListener(DocumentListener, ActionListener):
 		self.lanePreview()
 		
 
-class BackgroundListener(DocumentListener):
-	def __init__(self, textfields, frame, fieldListener):
+class BackgroundListener(DocumentListener, ItemListener):
+	def __init__(self, textfields, frame, fieldListener, bg_type, bg_type_list):
 		self.textfields = textfields
 		self.frame = frame
 		self.fieldListener = fieldListener
+		self.bg_type = bg_type
+		self.bg_type_list = bg_type_list
 		
 		self.first_x = fieldListener.first_x
 		self.first_y = fieldListener.first_y
@@ -142,75 +176,152 @@ class BackgroundListener(DocumentListener):
 		self.lane_sep = fieldListener.lane_sep
 		self.lane_width = fieldListener.lane_width
 		self.lane_count = fieldListener.lane_count
+		self.lane_dir = fieldListener.lane_dir
 	
 	def updateFields(self):
-		try:
-			bg_x = int(self.textfields["Left background sample x"].getText())
-			bg_sep = int(self.textfields["Background sample separation"].getText())
-		except Exception:
-			return
-		
-		self.bg_x = bg_x
-		self.bg_sep = bg_sep
+		if self.bg_type == BG_TYPE_PLANE_FIT:
+			try:
+				bg_x = int(self.textfields[INPUT_BG_LEFT_X].getText())
+				bg_sep = int(self.textfields[INPUT_BG_SEP].getText())
+			except Exception:
+				return
+			
+			self.bg_x = bg_x
+			self.bg_sep = bg_sep
+		if self.bg_type == BG_TYPE_LOCAL_MINIMA:
+			try:
+				band_width = int(self.textfields[INPUT_BG_BAND_WIDTH].getText())
+				band_offset = int(self.textfields[INPUT_BG_BAND_OFFSET].getText())
+			except Exception:
+				return
+			
+			self.band_width = band_width
+			self.band_offset = band_offset
 	
 	def backgroundPreview(self):
-		self.fieldListener.lanePreview()
-		
-		ip = self.fieldListener.imp.getProcessor().convertToRGB()
-
-		for i in range(2):
-			if self.fieldListener.lane_dir == "vertical":
-				roi = Line(self.bg_x + i * self.bg_sep, self.first_y,
-							self.bg_x + i * self.bg_sep, self.first_y + self.lane_length)
-			else:
-				roi = Line(self.bg_x + i * self.bg_sep, self.first_y - 0.5 * self.lane_width,
-							self.bg_x + i * self.bg_sep,
-							self.first_y + (self.lane_count - 1) * self.lane_sep + 0.5 * self.lane_width)
-
-			roi.setStrokeWidth(5) # TODO implement width setting for background as well?
-
-			ip.setRoi(roi)
-			ip.setColor("black")
-			ip.draw(roi)
+		if self.bg_type == BG_TYPE_PLANE_FIT:
+			self.fieldListener.lanePreview()
 			
-		self.fieldListener.imp.setProcessor(ip)
-		
-		self.fieldListener.plot.restorePlotObjects()
-		self.a, self.b, self.c = extract_background(self.bg_x, self.bg_sep, self.first_y, self.lane_length,
-													self.fieldListener.lane_dir, self.lane_count,
-													self.lane_sep, self.lane_width,
-													self.fieldListener.analysis_imp,
-													self.fieldListener.plot)
+			ip = self.fieldListener.imp.getProcessor().convertToRGB()
+	
+			for i in range(2):
+				if self.fieldListener.lane_dir == "vertical":
+					roi = Line(self.bg_x + i * self.bg_sep, self.first_y,
+								self.bg_x + i * self.bg_sep, self.first_y + self.lane_length)
+				else:
+					roi = Line(self.bg_x + i * self.bg_sep, self.first_y - 0.5 * self.lane_width,
+								self.bg_x + i * self.bg_sep,
+								self.first_y + (self.lane_count - 1) * self.lane_sep + 0.5 * self.lane_width)
+	
+				roi.setStrokeWidth(5) # TODO implement width setting for background as well?
+	
+				ip.setRoi(roi)
+				ip.setColor("black")
+				ip.draw(roi)
+				
+			self.fieldListener.imp.setProcessor(ip)
+			
+			self.fieldListener.plot.restorePlotObjects()
+			self.a, self.b, self.c = extract_background(self.bg_x, self.bg_sep, self.first_y, self.lane_length,
+														self.fieldListener.lane_dir, self.lane_count,
+														self.lane_sep, self.lane_width,
+														self.fieldListener.analysis_imp,
+														self.fieldListener.plot)
+		if self.bg_type == BG_TYPE_LOCAL_MINIMA:
+			self.fieldListener.plot.restorePlotObjects()
+			
+			_, plvalues = analyze(self.first_x, self.first_y, self.lane_length,
+											self.lane_sep, self.lane_width, self.lane_count,
+											self.lane_dir, self.fieldListener.analysis_imp)
+
+			self.bg_lines_xs = []
+			self.bg_lines_ys = []
+			for i in range(len(plvalues)):
+				ydata = plvalues[i]
+				self.fieldListener.plot.setColor(COLORS[i % len(COLORS)])
+				
+				current_x = self.band_offset
+				point_xs = []
+				point_ys = []
+				point_xs.append(0)
+				point_ys.append(ydata[0])
+				while current_x <= len(ydata):
+					min_x = max(current_x, 0)
+					min_y = ydata[min_x]
+					for test_x in range(current_x ,
+										min(current_x + self.band_width, len(ydata) - 1)):
+						if ydata[max(test_x, 0)] < min_y:
+							min_x = test_x
+							min_y = ydata[test_x]
+					point_xs.append(min_x)
+					point_ys.append(min_y)
+					current_x += self.band_width
+				point_xs.append(len(ydata) - 1)
+				point_ys.append(ydata[-1])
+				self.bg_lines_xs.append(point_xs)
+				self.bg_lines_ys.append(point_ys)
+
+				self.fieldListener.plot.addPoints(point_xs, point_ys, Plot.LINE)
+			
+			# draw vertical lines denoting interval edges
+			_, _, display_min_y, display_max_y = self.fieldListener.plot.getLimits()
+			current_x = self.band_offset
+			self.fieldListener.plot.setColor("black")
+			while current_x <= len(ydata):
+				self.fieldListener.plot.drawDottedLine(current_x, display_min_y, current_x, display_max_y, 10)
+				current_x += self.band_width
+			
+			self.fieldListener.plot.update()
+
 		
 	def removeBackground(self, event):
 		imp = self.fieldListener.analysis_imp
 
 		plot = Plot("Gel profiles", "Distance (pixels)", "Gray value")
 		self.adj_profiles = []
-
-		for i in range(self.lane_count):
-			if self.fieldListener.lane_dir == "vertical":
-				x = self.first_x + i * self.lane_sep
-				roi = Line(x, self.first_y, x, self.first_y + self.lane_length)
-			else:
-				y = self.first_y + i * self.lane_sep
-				roi = Line(self.first_x, y, self.first_x + self.lane_length, y)
-				
-			roi.setStrokeWidth(self.lane_width)
-			imp.setRoi(roi)
-			pp = ProfilePlot(imp)
-			values = pp.getProfile()
-			
-			for j in range(self.lane_length):
+		
+		if self.bg_type == BG_TYPE_PLANE_FIT:
+			for i in range(self.lane_count):
 				if self.fieldListener.lane_dir == "vertical":
-					y = self.first_y + j
+					x = self.first_x + i * self.lane_sep
+					roi = Line(x, self.first_y, x, self.first_y + self.lane_length)
 				else:
-					y = i * self.lane_sep + 0.5 * self.lane_width
-					x = self.first_x + j
-				values[j] = values[j] - (self.a * x + self.b * y + self.c)
-			plot.setColor(COLORS[i % len(COLORS)])
-			plot.add("line", values)
-			self.adj_profiles.append(values)
+					y = self.first_y + i * self.lane_sep
+					roi = Line(self.first_x, y, self.first_x + self.lane_length, y)
+					
+				roi.setStrokeWidth(self.lane_width)
+				imp.setRoi(roi)
+				pp = ProfilePlot(imp)
+				values = pp.getProfile()
+				
+				for j in range(self.lane_length):
+					if self.fieldListener.lane_dir == "vertical":
+						y = self.first_y + j
+					else:
+						y = i * self.lane_sep + 0.5 * self.lane_width
+						x = self.first_x + j
+					values[j] = values[j] - (self.a * x + self.b * y + self.c)
+				plot.setColor(COLORS[i % len(COLORS)])
+				plot.add("line", values)
+				self.adj_profiles.append(values)
+		
+		if self.bg_type == BG_TYPE_LOCAL_MINIMA:
+			_, plvalues = analyze(self.first_x, self.first_y, self.lane_length,
+											self.lane_sep, self.lane_width, self.lane_count,
+											self.lane_dir, self.fieldListener.analysis_imp)
+			for i in range(len(plvalues)):
+				values = plvalues[i]
+				bg_segment_i = 1
+				bg_line_xs = self.bg_lines_xs[i]
+				bg_line_ys = self.bg_lines_ys[i]
+				print bg_line_xs
+				for j in range(len(values)):
+					if j > bg_line_xs[bg_segment_i]:
+						bg_segment_i += 1
+					values[j] = values[j]  - bg_line_ys[bg_segment_i] - (1 - (j - bg_line_xs[bg_segment_i - 1])/float(bg_line_xs[bg_segment_i] - bg_line_xs[bg_segment_i - 1]))*(bg_line_ys[bg_segment_i - 1] - bg_line_ys[bg_segment_i])
+				plot.setColor(COLORS[i % len(COLORS)])
+				plot.add("line", values)
+				self.adj_profiles.append(values)	
 
 		self.fieldListener.lanePreview() # removes background lines on gel
 		self.fieldListener.plotWindow.close()
@@ -241,6 +352,16 @@ class BackgroundListener(DocumentListener):
 	def insertUpdate(self, event):
 		self.changedUpdate(event)
 		
+	# this function listens to background subtraction method switch menu
+	def itemStateChanged(self, event):
+		if event.getStateChange() == ItemEvent.SELECTED:
+			selected_bg_type = self.bg_type_list[event.getItemSelectable().getSelectedIndex()]
+			if selected_bg_type != self.bg_type:
+				self.fieldListener.lanePreview()
+				self.fieldListener.plot.restorePlotObjects()
+				self.fieldListener.plot.update()
+				background_window(self.frame, self.fieldListener, selected_bg_type)
+		
 
 class MeasurementListener(DocumentListener, ItemListener):
 	def __init__(self, textfields, result_fields, frame, backgroundListener):
@@ -265,8 +386,8 @@ class MeasurementListener(DocumentListener, ItemListener):
 	
 	def updateFields(self):
 		try:
-			left_bound = int(self.textfields["Left peak sum border"].getText())
-			right_bound = int(self.textfields["Right peak sum border"].getText())
+			left_bound = int(self.textfields[INPUT_MSR_LEFT_BOUND].getText())
+			right_bound = int(self.textfields[INPUT_MSR_RIGHT_BOUND].getText())
 		except Exception:
 			return
 		
@@ -375,8 +496,8 @@ class MeasurementListener(DocumentListener, ItemListener):
 		if event.getStateChange() == ItemEvent.SELECTED:
 			self.selected_i = event.getItemSelectable().getSelectedIndex()
 			lb, rb = self.selectionList[self.selected_i][0], self.selectionList[self.selected_i][1]
-			self.textfields["Left peak sum border"].setText(str(lb))
-			self.textfields["Right peak sum border"].setText(str(rb))
+			self.textfields[INPUT_MSR_LEFT_BOUND].setText(str(lb))
+			self.textfields[INPUT_MSR_RIGHT_BOUND].setText(str(rb))
 			
 			self.sumProfiles()
 
@@ -485,6 +606,7 @@ def fit_plane(values):
 	return a, b, c
 
 
+
 def selection_window():
 	try:
 		IJ.getImage()
@@ -508,8 +630,8 @@ def selection_window():
   	textfields = {}
   	field_listener = FieldListener(textfields, frame)
   	
-  	analysis_defaults = {"First lane x": 815, "First lane y": 50, "Lane length": 950,
-					"Lane separation": 165, "Lane width": 50, "Lane count": 5}
+  	analysis_defaults = {INPUT_SEL_FIRST_X: 815, INPUT_SEL_FIRST_Y: 50, INPUT_SEL_LANE_LENGTH: 950,
+					INPUT_SEL_LANE_SEP: 165, INPUT_SEL_LANE_WIDTH: 50, INPUT_SEL_LANE_COUNT: 5}
   	
   	button = JButton("Auto-adjust contrast", actionPerformed=field_listener.enhanceContrast)
 	gb.setConstraints(button, gc)
@@ -550,18 +672,18 @@ def selection_window():
 	gc.gridwidth = 1
 	gc.gridy += 1
 
-	for title in ["First lane x", "First lane y", "Lane length", "Lane separation", "Lane width", "Lane count"]:  
+	for field in [INPUT_SEL_FIRST_X, INPUT_SEL_FIRST_Y, INPUT_SEL_LANE_LENGTH, INPUT_SEL_LANE_SEP, INPUT_SEL_LANE_WIDTH, INPUT_SEL_LANE_COUNT]:  
 	    gc.gridx = 0  
 	    gc.anchor = GBC.EAST  
-	    label = JLabel(title + ": ")  
+	    label = JLabel(INPUT_LABELS[field] + ": ")  
 	    gb.setConstraints(label, gc)
 	    panel.add(label)
 	    
 	    gc.gridx = 1
 	    gc.anchor = GBC.WEST
-	    text = str(analysis_defaults[title]) 
+	    text = str(analysis_defaults[field]) 
 	    textfield = JTextField(text, 10)
-	    textfields[title] = textfield
+	    textfields[field] = textfield
 	    gb.setConstraints(textfield, gc)
 	    textfield.getDocument().addDocumentListener(field_listener)
 	    panel.add(textfield)
@@ -582,7 +704,7 @@ def selection_window():
 	field_listener.lanePreview()
 
 
-def background_window(frame, field_listener):
+def background_window(frame, field_listener, bg_type=BG_TYPE_PLANE_FIT):
 	frame.getContentPane().removeAll()
 	frame.setTitle("Background selection")
 	panel = JPanel()
@@ -597,49 +719,112 @@ def background_window(frame, field_listener):
   	gc.gridheight = 1
   	gc.fill = GBC.NONE
   	
-  	gc.gridwidth = 2
-  	label_text = "Place the black lines on the lane overview image so that they are located outside of any gel lane, one to the left from your selection lanes, one to the right. These lines are then used to fit a background plane, which will be subtracted from the data. You may see a preview of the background for the two lines in the gel profile graph."
-  	label = JLabel("<html>" + label_text + "</html>")
-  	label = JTextArea(label_text, 6, 30)
-  	label.setLineWrap(True)
-  	label.setWrapStyleWord(True)
-  	label.setEditable(False)
-  	gb.setConstraints(label, gc)
-  	panel.add(label)
-  	
-  	gc.gridwidth = 1
-  	gc.gridy += 1
-  	
   	textfields = {}
-	bg_listener = BackgroundListener(textfields, frame, field_listener)
+  	bg_type_list = [BG_TYPE_PLANE_FIT, BG_TYPE_LOCAL_MINIMA] # if changed, edit the corresponding combo box!
+	bg_listener = BackgroundListener(textfields, frame, field_listener, bg_type, bg_type_list)
+  	
+	gc.anchor = GBC.EAST  
+  	label = JLabel("Background method:")
+	gb.setConstraints(label, gc) 
+	panel.add(label)
 	
-	if field_listener.lane_dir == "vertical":
-		background_defaults = {
-			"Left background sample x": int(field_listener.first_x - 0.5 * field_listener.lane_sep),
-			"Background sample separation": field_listener.lane_count * field_listener.lane_sep
-			}
-	else:
-		background_defaults = {
-			"Left background sample x": int(field_listener.first_x - 0.5 * field_listener.lane_sep),
-			"Background sample separation": field_listener.lane_length + field_listener.lane_sep}
+	gc.gridx = 1
+	gc.anchor = GBC.WEST
+	
+	combobox = JComboBox(["Plane fit", "Join local minima"]) # if changed, edit bg_type_list above!
+	gb.setConstraints(combobox, gc)
+	panel.add(combobox)
+	if bg_type == BG_TYPE_LOCAL_MINIMA:
+		combobox.setSelectedIndex(1)
+	#ms_listener.area_selector = combobox
+	combobox.addItemListener(bg_listener)
+  	
+  	gc.gridy += 1
+  	gc.gridx = 0
+  	gc.anchor = GBC.EAST
+  	
+  	
+  	if bg_type == BG_TYPE_PLANE_FIT:
+  		gc.gridwidth = 2
+  		
+	  	label_text = "Place the black lines on the lane overview image so that they are located outside of any gel lane, one to the left from your selection lanes, one to the right. These lines are then used to fit a background plane, which will be subtracted from the data. You may see a preview of the background for the two lines in the gel profile graph."
+	  	#label = JLabel("<html>" + label_text + "</html>")
+	  	label = JTextArea(label_text, 6, 30)
+	  	label.setLineWrap(True)
+	  	label.setWrapStyleWord(True)
+	  	label.setEditable(False)
+	  	gb.setConstraints(label, gc)
+	  	panel.add(label)
+	  	
+	  	gc.gridwidth = 1
+	  	gc.gridy += 1
+	  	
 		
-
-	for title in ["Left background sample x", "Background sample separation"]:  
-	    gc.gridx = 0  
-	    gc.anchor = GBC.EAST  
-	    label = JLabel(title + ": ")  
-	    gb.setConstraints(label, gc)
-	    panel.add(label)
-
-	    gc.gridx = 1
-	    gc.anchor = GBC.WEST
-	    text = str(background_defaults[title]) 
-	    textfield = JTextField(text, 10)
-	    textfields[title] = textfield
-	    gb.setConstraints(textfield, gc)
-	    textfield.getDocument().addDocumentListener(bg_listener)
-	    panel.add(textfield)
-	    gc.gridy += 1
+		if field_listener.lane_dir == "vertical":
+			background_defaults = {
+				INPUT_BG_LEFT_X: int(field_listener.first_x - 0.5 * field_listener.lane_sep),
+				INPUT_BG_SEP: field_listener.lane_count * field_listener.lane_sep
+				}
+		else:
+			background_defaults = {
+				INPUT_BG_LEFT_X: int(field_listener.first_x - 0.5 * field_listener.lane_sep),
+				INPUT_BG_SEP: field_listener.lane_length + field_listener.lane_sep}
+			
+	
+		for field in [INPUT_BG_LEFT_X, INPUT_BG_SEP]:  
+		    gc.gridx = 0  
+		    gc.anchor = GBC.EAST  
+		    label = JLabel(INPUT_LABELS[field] + ": ")  
+		    gb.setConstraints(label, gc)
+		    panel.add(label)
+	
+		    gc.gridx = 1
+		    gc.anchor = GBC.WEST
+		    text = str(background_defaults[field]) 
+		    textfield = JTextField(text, 10)
+		    textfields[field] = textfield
+		    gb.setConstraints(textfield, gc)
+		    textfield.getDocument().addDocumentListener(bg_listener)
+		    panel.add(textfield)
+		    gc.gridy += 1
+		    
+		    
+	if bg_type == BG_TYPE_LOCAL_MINIMA:
+  		gc.gridwidth = 2
+  		
+  		label_text = "Divides the data to segments of length set in Band width and finds local minimum in each. For optimal results, band width should correspond to the width of individual bands on the gel. Band offset sets an offset from the left side of analysed data which can be used to shift the position of segments."
+	  	#label = JLabel("<html>" + label_text + "</html>")
+	  	label = JTextArea(label_text, 5, 30)
+	  	label.setLineWrap(True)
+	  	label.setWrapStyleWord(True)
+	  	label.setEditable(False)
+	  	gb.setConstraints(label, gc)
+	  	panel.add(label)
+	  	
+	  	gc.gridwidth = 1
+	  	gc.gridy += 1
+	  	
+	  	background_defaults = {
+	  		INPUT_BG_BAND_WIDTH: 160,
+	  		INPUT_BG_BAND_OFFSET: 0
+	  	}
+	  	
+	  	for field in [INPUT_BG_BAND_WIDTH, INPUT_BG_BAND_OFFSET]:  
+		    gc.gridx = 0  
+		    gc.anchor = GBC.EAST  
+		    label = JLabel(INPUT_LABELS[field] + ": ")  
+		    gb.setConstraints(label, gc)
+		    panel.add(label)
+	
+		    gc.gridx = 1
+		    gc.anchor = GBC.WEST
+		    text = str(background_defaults[field]) 
+		    textfield = JTextField(text, 10)
+		    textfields[field] = textfield
+		    gb.setConstraints(textfield, gc)
+		    textfield.getDocument().addDocumentListener(bg_listener)
+		    panel.add(textfield)
+		    gc.gridy += 1
 
 	gc.gridx = 0
 	button = JButton("<< Back", actionPerformed=bg_listener.revertToPrevStep)
@@ -695,22 +880,22 @@ def measurement_window(frame, background_listener):
 	
 
 	measurement_defaults = {
-		"Left peak sum border": 0,
-		"Right peak sum border": max_length
+		INPUT_MSR_LEFT_BOUND: 0,
+		INPUT_MSR_RIGHT_BOUND: max_length
 		}
 	
-	for title in ["Left peak sum border", "Right peak sum border"]:  
+	for field in [INPUT_MSR_LEFT_BOUND, INPUT_MSR_RIGHT_BOUND]:  
 	    gc.gridx = 0  
 	    gc.anchor = GBC.EAST  
-	    label = JLabel(title + ": ")  
+	    label = JLabel(INPUT_LABELS[field] + ": ")  
 	    gb.setConstraints(label, gc) 
 	    panel.add(label)  
 
 	    gc.gridx = 1
 	    gc.anchor = GBC.WEST
-	    text = str(measurement_defaults[title]) 
+	    text = str(measurement_defaults[field]) 
 	    textfield = JTextField(text, 10)
-	    textfields[title] = textfield
+	    textfields[field] = textfield
 	    gb.setConstraints(textfield, gc)
 	    textfield.getDocument().addDocumentListener(ms_listener)
 	    panel.add(textfield)
