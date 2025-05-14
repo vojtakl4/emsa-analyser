@@ -245,6 +245,8 @@ class BackgroundListener(DocumentListener, ItemListener):
 			#self.fieldListener.plot.setColor("green")
 			#band_offset = 130
 			#band_width = 160
+			self.bg_lines_xs = []
+			self.bg_lines_ys = []
 			for i in range(len(plvalues)):
 				ydata = plvalues[i]
 				self.fieldListener.plot.setColor(COLORS[i % len(COLORS)])
@@ -269,6 +271,8 @@ class BackgroundListener(DocumentListener, ItemListener):
 					current_x += self.band_width
 				point_xs.append(len(ydata) - 1)
 				point_ys.append(ydata[-1])
+				self.bg_lines_xs.append(point_xs)
+				self.bg_lines_ys.append(point_ys)
 
 				self.fieldListener.plot.addPoints(point_xs, point_ys, Plot.LINE)
 			
@@ -296,30 +300,51 @@ class BackgroundListener(DocumentListener, ItemListener):
 
 		plot = Plot("Gel profiles", "Distance (pixels)", "Gray value")
 		self.adj_profiles = []
-
-		for i in range(self.lane_count):
-			if self.fieldListener.lane_dir == "vertical":
-				x = self.first_x + i * self.lane_sep
-				roi = Line(x, self.first_y, x, self.first_y + self.lane_length)
-			else:
-				y = self.first_y + i * self.lane_sep
-				roi = Line(self.first_x, y, self.first_x + self.lane_length, y)
-				
-			roi.setStrokeWidth(self.lane_width)
-			imp.setRoi(roi)
-			pp = ProfilePlot(imp)
-			values = pp.getProfile()
-			
-			for j in range(self.lane_length):
+		
+		if self.bg_type == BG_TYPE_PLANE_FIT:
+			for i in range(self.lane_count):
 				if self.fieldListener.lane_dir == "vertical":
-					y = self.first_y + j
+					x = self.first_x + i * self.lane_sep
+					roi = Line(x, self.first_y, x, self.first_y + self.lane_length)
 				else:
-					y = i * self.lane_sep + 0.5 * self.lane_width
-					x = self.first_x + j
-				values[j] = values[j] - (self.a * x + self.b * y + self.c)
-			plot.setColor(COLORS[i % len(COLORS)])
-			plot.add("line", values)
-			self.adj_profiles.append(values)
+					y = self.first_y + i * self.lane_sep
+					roi = Line(self.first_x, y, self.first_x + self.lane_length, y)
+					
+				roi.setStrokeWidth(self.lane_width)
+				imp.setRoi(roi)
+				pp = ProfilePlot(imp)
+				values = pp.getProfile()
+				
+				for j in range(self.lane_length):
+					if self.fieldListener.lane_dir == "vertical":
+						y = self.first_y + j
+					else:
+						y = i * self.lane_sep + 0.5 * self.lane_width
+						x = self.first_x + j
+					values[j] = values[j] - (self.a * x + self.b * y + self.c)
+				plot.setColor(COLORS[i % len(COLORS)])
+				plot.add("line", values)
+				self.adj_profiles.append(values)
+		
+		if self.bg_type == BG_TYPE_LOCAL_MINIMA:
+			_, plvalues = analyze(self.first_x, self.first_y, self.lane_length,
+											self.lane_sep, self.lane_width, self.lane_count,
+											self.lane_dir, self.fieldListener.analysis_imp)
+			for i in range(len(plvalues)):
+				values = plvalues[i]
+				bg_segment_i = 1
+				bg_line_xs = self.bg_lines_xs[i]
+				bg_line_ys = self.bg_lines_ys[i]
+				print bg_line_xs
+				for j in range(len(values)):
+					if j > bg_line_xs[bg_segment_i]:
+						bg_segment_i += 1
+					print "j", j, "bg_x[i-1]", bg_line_xs[bg_segment_i-1], "bg_x[i]", bg_line_xs[bg_segment_i], "bg_y[i-1]", bg_line_ys[bg_segment_i - 1], "bg_y[i]", bg_line_ys[bg_segment_i], "shift", (1 - (j - bg_line_xs[bg_segment_i - 1])/float(bg_line_xs[bg_segment_i] - bg_line_xs[bg_segment_i - 1]))*(bg_line_ys[bg_segment_i - 1] - bg_line_ys[bg_segment_i]), "perc_i-1_to_i", (1 - (j - bg_line_xs[bg_segment_i - 1])/float(bg_line_xs[bg_segment_i] - bg_line_xs[bg_segment_i - 1]))
+					print "orig_value", values[j], "new_value", values[j]  - bg_line_ys[bg_segment_i - 1] - (1 - (j - bg_line_xs[bg_segment_i - 1])/float(bg_line_xs[bg_segment_i] - bg_line_xs[bg_segment_i - 1]))*(bg_line_ys[bg_segment_i - 1] - bg_line_ys[bg_segment_i])
+					values[j] = values[j]  - bg_line_ys[bg_segment_i] - (1 - (j - bg_line_xs[bg_segment_i - 1])/float(bg_line_xs[bg_segment_i] - bg_line_xs[bg_segment_i - 1]))*(bg_line_ys[bg_segment_i - 1] - bg_line_ys[bg_segment_i])
+				plot.setColor(COLORS[i % len(COLORS)])
+				plot.add("line", values)
+				self.adj_profiles.append(values)	
 
 		self.fieldListener.lanePreview() # removes background lines on gel
 		self.fieldListener.plotWindow.close()
