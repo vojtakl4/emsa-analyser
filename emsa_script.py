@@ -206,10 +206,10 @@ class BackgroundListener(DocumentListener, ItemListener):
 											self.lane_sep, self.lane_width, self.lane_count,
 											self.lane_dir, self.fieldListener.analysis_imp)
 											
-			ydata = plvalues[0]
-			ydata_filtered, peaks = find_peaks(ydata)
+			#ydata = plvalues[0]
+			""""ydata_filtered, peaks = find_peaks(ydata)
 			self.fieldListener.plot.setColor("black")
-			self.fieldListener.plot.add("line", ydata_filtered)
+			self.fieldListener.plot.add("line", ydata_filtered)"""
 			
 			#print(sorted([peak.height for peak in peaks]))
 
@@ -219,7 +219,7 @@ class BackgroundListener(DocumentListener, ItemListener):
 			#peak_xs = [peak.i for peak in peaks if peak.prominence > min_prominence and peak.height > min_height]
 			#peak_ys = [plvalues[0][x] for x in peak_xs]
 			#self.fieldListener.plot.addPoints(peak_xs, peak_ys, Plot.CIRCLE)
-			self.fieldListener.plot.setColor("ebc034")
+			""""self.fieldListener.plot.setColor("ebc034")
 			for peak in peaks:
 				xmin = peak.xleft
 				xmax = peak.xright
@@ -229,7 +229,7 @@ class BackgroundListener(DocumentListener, ItemListener):
 				self.fieldListener.plot.drawLine(xmin, ymax, xmax, ymax)
 				self.fieldListener.plot.drawLine(xmax, ymax, xmax, ymin)
 				self.fieldListener.plot.drawLine(xmax, ymin, xmin, ymin)
-				
+				"""
 			""""multipeaks = merge_peaks(peaks, ydata)
 			self.fieldListener.plot.setColor("blue")
 			for peak in multipeaks:
@@ -242,29 +242,43 @@ class BackgroundListener(DocumentListener, ItemListener):
 				self.fieldListener.plot.drawLine(xmax, ymax, xmax, ymin)
 				self.fieldListener.plot.drawLine(xmax, ymin, xmin, ymin)"""
 			
-			self.fieldListener.plot.setColor("green")
+			#self.fieldListener.plot.setColor("green")
 			#band_offset = 130
 			#band_width = 160
-			current_x = self.band_offset
-			point_xs = []
-			point_ys = []
-			point_xs.append(0)
-			point_ys.append(ydata[0])
-			while current_x <= len(ydata):
-				min_x = max(current_x, 0)
-				min_y = ydata[min_x]
-				for test_x in range(current_x - self.band_width/2,
-									min(current_x + self.band_width/2, len(ydata) - 1)):
-					if ydata[max(test_x, 0)] < min_y:
-						min_x = test_x
-						min_y = ydata[test_x]
-				point_xs.append(min_x)
-				point_ys.append(min_y)
-				current_x += self.band_width
-			point_xs.append(len(ydata) - 1)
-			point_ys.append(ydata[-1])
+			for i in range(len(plvalues)):
+				ydata = plvalues[i]
+				self.fieldListener.plot.setColor(COLORS[i % len(COLORS)])
+				
+				current_x = self.band_offset
+				point_xs = []
+				point_ys = []
+				point_xs.append(0)
+				point_ys.append(ydata[0])
+				while current_x <= len(ydata):
+					min_x = max(current_x, 0)
+					min_y = ydata[min_x]
+					print "c_x", current_x, "min_test_x", current_x, "max_test_x", min(current_x + self.band_width, len(ydata) - 1)
+					for test_x in range(current_x ,
+										min(current_x + self.band_width, len(ydata) - 1)):
+						if ydata[max(test_x, 0)] < min_y:
+							min_x = test_x
+							min_y = ydata[test_x]
+					print "loc_min", min_x
+					point_xs.append(min_x)
+					point_ys.append(min_y)
+					current_x += self.band_width
+				point_xs.append(len(ydata) - 1)
+				point_ys.append(ydata[-1])
 
-			self.fieldListener.plot.addPoints(point_xs, point_ys, Plot.LINE)
+				self.fieldListener.plot.addPoints(point_xs, point_ys, Plot.LINE)
+			
+			# draw vertical lines denoting interval edges
+			_, _, display_min_y, display_max_y = self.fieldListener.plot.getLimits()
+			current_x = self.band_offset
+			self.fieldListener.plot.setColor("black")
+			while current_x <= len(ydata):
+				self.fieldListener.plot.drawDottedLine(current_x, display_min_y, current_x, display_max_y, 10)
+				current_x += self.band_width
 			
 			self.fieldListener.plot.update()
 			#minima = find_local_minima(plvalues[0])
@@ -968,7 +982,7 @@ def background_window(frame, field_listener, bg_type=BG_TYPE_PLANE_FIT):
 	if bg_type == BG_TYPE_LOCAL_MINIMA:
   		gc.gridwidth = 2
   		
-  		label_text = "Divides the data to segments of length set in Band width and finds local minimum in each. For optimal results, band width should correcpond to the width of individual bands on the gel. Band offset sets an offset from the left side of analysed data which can be used to shift the position of segments."
+  		label_text = "Divides the data to segments of length set in Band width and finds local minimum in each. For optimal results, band width should correspond to the width of individual bands on the gel. Band offset sets an offset from the left side of analysed data which can be used to shift the position of segments."
 	  	#label = JLabel("<html>" + label_text + "</html>")
 	  	label = JTextArea(label_text, 5, 30)
 	  	label.setLineWrap(True)
