@@ -14,11 +14,13 @@ from ij import IJ, ImagePlus, ImageListener
 from ij.gui import RoiListener, Roi, Line, ProfilePlot, Plot
 from ij.plugin import ContrastEnhancer
 from ij.io import SaveDialog
+from ij.measure import CurveFitter
 from javax.swing import JFrame, JPanel, JButton, JOptionPane, JLabel, JTextField, BorderFactory, JTextPane, JRadioButton, ButtonGroup, JComboBox, JTextArea
 from java.awt import GridBagLayout, GridBagConstraints as GBC
 from javax.swing.event import DocumentListener
 from java.awt.event import ActionListener, ItemListener, ItemEvent
 from java.lang import RuntimeException
+from math import log, sqrt
 
 # partly based on matplotlib Set1 color scheme
 COLORS = ["blue", "green", "red", "orange", "magenta", "#ffff33", "#a65628", "#f781bf", "#999999"]
@@ -146,6 +148,7 @@ class BackgroundListener(DocumentListener, ItemListener):
 		self.lane_sep = fieldListener.lane_sep
 		self.lane_width = fieldListener.lane_width
 		self.lane_count = fieldListener.lane_count
+		self.lane_dir = fieldListener.lane_dir
 	
 	def updateFields(self):
 		if self.bg_type == BG_TYPE_PLANE_FIT:
@@ -158,7 +161,14 @@ class BackgroundListener(DocumentListener, ItemListener):
 			self.bg_x = bg_x
 			self.bg_sep = bg_sep
 		if self.bg_type == BG_TYPE_LOCAL_MINIMA:
-			pass
+			try:
+				band_width = int(self.textfields["Band width"].getText())
+				band_offset = int(self.textfields["Band offset"].getText())
+			except Exception:
+				return
+			
+			self.band_width = band_width
+			self.band_offset = band_offset
 	
 	def backgroundPreview(self):
 		if self.bg_type == BG_TYPE_PLANE_FIT:
@@ -190,7 +200,82 @@ class BackgroundListener(DocumentListener, ItemListener):
 														self.fieldListener.analysis_imp,
 														self.fieldListener.plot)
 		if self.bg_type == BG_TYPE_LOCAL_MINIMA:
-			pass
+			self.fieldListener.plot.restorePlotObjects()
+			
+			_, plvalues = analyze(self.first_x, self.first_y, self.lane_length,
+											self.lane_sep, self.lane_width, self.lane_count,
+											self.lane_dir, self.fieldListener.analysis_imp)
+											
+			ydata = plvalues[0]
+			ydata_filtered, peaks = find_peaks(ydata)
+			self.fieldListener.plot.setColor("black")
+			self.fieldListener.plot.add("line", ydata_filtered)
+			
+			#print(sorted([peak.height for peak in peaks]))
+
+			# select peaks based on a combination of prominence, height and smoothing?
+			#min_prominence = 0
+			#min_height = 0
+			#peak_xs = [peak.i for peak in peaks if peak.prominence > min_prominence and peak.height > min_height]
+			#peak_ys = [plvalues[0][x] for x in peak_xs]
+			#self.fieldListener.plot.addPoints(peak_xs, peak_ys, Plot.CIRCLE)
+			self.fieldListener.plot.setColor("ebc034")
+			for peak in peaks:
+				xmin = peak.xleft
+				xmax = peak.xright
+				ymin = min(ydata[peak.ileft], ydata[peak.iright])
+				ymax = ydata[peak.i]
+				self.fieldListener.plot.drawLine(xmin, ymin, xmin, ymax)
+				self.fieldListener.plot.drawLine(xmin, ymax, xmax, ymax)
+				self.fieldListener.plot.drawLine(xmax, ymax, xmax, ymin)
+				self.fieldListener.plot.drawLine(xmax, ymin, xmin, ymin)
+				
+			""""multipeaks = merge_peaks(peaks, ydata)
+			self.fieldListener.plot.setColor("blue")
+			for peak in multipeaks:
+				xmin = peak.xleft
+				xmax = peak.xright
+				ymin = min(ydata[peak.ileft], ydata[peak.iright])
+				ymax = ydata[peak.i]
+				self.fieldListener.plot.drawLine(xmin, ymin, xmin, ymax)
+				self.fieldListener.plot.drawLine(xmin, ymax, xmax, ymax)
+				self.fieldListener.plot.drawLine(xmax, ymax, xmax, ymin)
+				self.fieldListener.plot.drawLine(xmax, ymin, xmin, ymin)"""
+			
+			self.fieldListener.plot.setColor("green")
+			#band_offset = 130
+			#band_width = 160
+			current_x = self.band_offset
+			point_xs = []
+			point_ys = []
+			point_xs.append(0)
+			point_ys.append(ydata[0])
+			while current_x <= len(ydata):
+				min_x = max(current_x, 0)
+				min_y = ydata[min_x]
+				for test_x in range(current_x - self.band_width/2,
+									min(current_x + self.band_width/2, len(ydata) - 1)):
+					if ydata[max(test_x, 0)] < min_y:
+						min_x = test_x
+						min_y = ydata[test_x]
+				point_xs.append(min_x)
+				point_ys.append(min_y)
+				current_x += self.band_width
+			point_xs.append(len(ydata) - 1)
+			point_ys.append(ydata[-1])
+
+			self.fieldListener.plot.addPoints(point_xs, point_ys, Plot.LINE)
+			
+			self.fieldListener.plot.update()
+			#minima = find_local_minima(plvalues[0])
+			#minima_y = [plvalues[0][x] for x in minima]
+			#self.fieldListener.plot.addPoints(minima, minima_y, Plot.CIRCLE)
+			#print len(minima)
+			
+			#cf = CurveFitter(minima, minima_y)
+			#cf.doFit(CurveFitter.POLY3)
+			#fit_values = [cf.f(x) for x in range(len(plvalues[0]))]
+			#self.fieldListener.plot.add("line", fit_values)
 		
 	def removeBackground(self, event):
 		imp = self.fieldListener.analysis_imp
@@ -505,6 +590,199 @@ def fit_plane(values):
 	return a, b, c
 
 
+class Peak():
+	def __init__(self):
+		pass
+	""""def __init__(self, prominence, x, height, area, width, i):
+		self.prominence = prominence
+		self.x = x
+		self. height = height
+		self.area = area
+		self.width = width
+		self.i = i"""
+
+# based on Gwyddion peaks module, (c) David Nečas
+# values: a list of y values to find peaks on
+# xdata: corresponding x values; if not set, assumed xdata are 1 to len(values)
+# returns a list of Peak objects
+def find_peaks(values, xdata = None):
+	n = len(values)
+	peaks = []
+	ydata = values
+	if xdata == None:
+		xdata = list(range(n))
+	
+	# perform simple closing
+	ydata_filtered = ydata
+	ydata_filtered2 = [0 for i in range(n)]
+	for i in range(1, int(log(n) - 0.4)):
+		ydata_filtered2[0] = ydata_filtered[0]
+		for i in range(1, n - 1):
+			y = ydata_filtered[i]
+			yl = 0.5*(ydata_filtered[i + 1] + ydata_filtered[i - 1])
+			ydata_filtered2[i] = max(y, yl)
+		ydata_filtered2[-1] = ydata_filtered[-1]
+		ydata_filtered = ydata_filtered2
+	
+	# find local maxima
+	flatsize = 0
+	for i in range(1, n - 1):
+		y = ydata_filtered[i]
+		yp = ydata_filtered[i - 1]
+		yn = ydata_filtered[i + 1]
+		
+		# normal cases
+		if (y < yp or y < yn):
+			continue
+		if (y > yp and y > yn):
+			peak = Peak()
+			peak.i = i
+			peaks.append(peak)
+		
+		# flat tops
+		if (y == yn and y > yp):
+			flatsize = 0
+		elif (y == yn and y == yp):
+			flatsize += 1
+		elif (y == yp and y > yn):
+			peak = Peak()
+			peak.i = i - flatsize/2
+			peaks.append(peak)
+		
+	# analyse prominence
+	for k in range(0, len(peaks)):
+		peak = peaks[k]
+		
+		# find the peak extents
+		ileft = peak.i - 1
+		while(ileft > 0 and ydata_filtered[ileft - 1] == ydata_filtered[ileft]):
+			ileft = ileft - 1
+		
+		while (ileft > 0 and ydata_filtered[ileft] > ydata_filtered[ileft - 1]):
+			ileft = ileft - 1
+		yleft = ydata[ileft]
+		
+		iright = peak.i + 1
+		while(iright < n - 1 and ydata_filtered[iright + 1] == ydata_filtered[iright]):
+			iright = iright + 1
+		
+		while (iright < n - 1 and ydata_filtered[iright] > ydata_filtered[iright + 1]):
+			iright = iright + 1
+		yright = ydata[iright]
+		
+		peak.ileft = ileft
+		peak.iright = iright
+		peak.xleft = xdata[ileft]
+		peak.xright = xdata[iright]
+		
+		# calculate height, area etc.
+		arealeft = 0
+		arearight = 0
+		disp2left = 0
+		disp2right = 0
+		peak.x = xdata[peak.i]
+		for i in range(ileft, peak.i):
+			xl = xdata[i] - peak.x
+			xr = xdata[i + 1] - peak.x
+			yl = max(ydata[i] - yleft, 0)
+			yr = max(ydata[i + 1] - yleft, 0)
+			arealeft += (xr - xl)*(yl + yr)/2
+			disp2left += (xr - xl)*((3*yr + yl)*xr*xr + 2*(yl + yr)*xr*xl + (yr + 3*yl)*xl*xl)/12
+		for i in range(iright, peak.i, -1):
+			xl = xdata[i - 1] - peak.x
+			xr = xdata[i] - peak.x
+			yl = max(ydata[i - 1] - yright, 0)
+			yr = max(ydata[i] - yright, 0)
+			arearight += (xr - xl)*(yl + yr)/2
+			disp2right += (xr - xl)*((3*yr + yl)*xr*xr + 2*(yl + yr)*xr*xl + (yr + 3*yl)*xl*xl)/12
+		
+		peak.area = arealeft + arearight
+		if (arealeft > 0 and arearight > 0):
+			peak.width = sqrt(0.5*(disp2left/arealeft + disp2right/arearight))
+		elif (arealeft > 0):
+			peak.width = sqrt(disp2left/arealeft)
+		elif (arearight > 0):
+			peak.width = sqrt(disp2right/arearight)
+		else:
+			peak.width = 0
+		
+		i = peak.i
+		peak.height = ydata[i] - 0.5*(yleft + yright)
+		if (ydata[i] > ydata[i - 1] or ydata[i] > ydata[i + 1]):
+			epsp = ydata[i] - ydata[i + 1]
+			epsm = ydata[i] + ydata[i - 1]
+			dp = xdata[i + 1] - xdata[i]
+			dm = xdata[i] - xdata[i - 1]
+			xdiff = 0.5*(epsm*dp*dp - epsp*dm*dm)/(epsm*dp + epsp*dm)
+			if (peak.x + xdiff < xdata[i + 1] and peak.x + xdiff > xdata[i + 1]):
+				peak.x += xdiff
+	
+	k = 0
+	while k < len(peaks):
+		peak = peaks[k]
+		xleft = peaks[k - 1].x if k > 0 else xdata[0]
+		xright = peaks[k + 1].x if k + 1 < len(peaks) else xdata[-1]
+		
+		if peak.height <= 0 or peak.area <= 0 or peak.x >= xright or peak.x <= xleft:
+			peaks.pop(k)
+		else:
+			peak.prominence = log(peak.height * peak.area * (xright - peak.x) * (peak.x - xleft))
+			k += 1
+
+	return ydata_filtered, peaks
+
+# merges selected peaks from a list of Peak objects to generate multipeaks
+# that should correspond to complete areas of increased density on a gel
+def merge_peaks(peaks, ydata, min_height=1.0):
+	left_sides_ixs = []
+	right_sides_ixs = []
+	for peak_ix in range(len(peaks)):
+		peak = peaks[peak_ix]
+		left_height = ydata[peak.i] - ydata[peak.ileft]
+		right_height = ydata[peak.i] - ydata[peak.iright]
+		if left_height > min_height:
+			left_sides_ixs.append(peak_ix)
+		if right_height > min_height:
+			right_sides_ixs.append(peak_ix)
+	
+	return []
+
+# TODO delete if unused
+# min_h_diff: how much difference in value must be at least between the minimum and one of surrounding
+# 			local maxima for it to be registered
+def find_local_minima(values, min_val_diff=0):
+	minima = []
+	if values[0] < values[1]:
+		i = 0
+		k = i + 1
+		while k + 1 < len(values) and values[k + 1] > values[k]:
+			k += 1
+		if values[k] - values[i] > min_val_diff:
+			minima.append(i)
+	for i in range(1, len(values) - 1):
+		if values[i - 1] > values[i] and values[i] <= values[i + 1]:
+			k = i - 1
+			while k - 1 > 0 and values[k - 1] > values[k]:
+				k -= 1
+			val_diff = values[k] - values[i]
+			
+			k = i + 1
+			while k + 1 < len(values) and values[k + 1] > values[k]:
+				k += 1
+			val_diff = max(val_diff, values[k] - values[i])
+			
+			if val_diff > min_val_diff:
+				minima.append(i)
+	if values[-1] < values[-2]:
+		i = len(values) - 1
+		k = i - 1
+		while k - 1 > 0 and values[k - 1] > values[k]:
+			k -= 1
+		if values[k] - values[i] > min_val_diff:
+			minima.append(i)
+	return minima
+
+
 def selection_window():
 	try:
 		IJ.getImage()
@@ -690,9 +968,9 @@ def background_window(frame, field_listener, bg_type=BG_TYPE_PLANE_FIT):
 	if bg_type == BG_TYPE_LOCAL_MINIMA:
   		gc.gridwidth = 2
   		
-  		label_text = "Isn't it a nice day after all?"
+  		label_text = "Divides the data to segments of length set in Band width and finds local minimum in each. For optimal results, band width should correcpond to the width of individual bands on the gel. Band offset sets an offset from the left side of analysed data which can be used to shift the position of segments."
 	  	#label = JLabel("<html>" + label_text + "</html>")
-	  	label = JTextArea(label_text, 6, 30)
+	  	label = JTextArea(label_text, 5, 30)
 	  	label.setLineWrap(True)
 	  	label.setWrapStyleWord(True)
 	  	label.setEditable(False)
@@ -700,7 +978,29 @@ def background_window(frame, field_listener, bg_type=BG_TYPE_PLANE_FIT):
 	  	panel.add(label)
 	  	
 	  	gc.gridwidth = 1
-	  	gc.gridy += 1	
+	  	gc.gridy += 1
+	  	
+	  	background_defaults = {
+	  		"Band width": 160,
+	  		"Band offset": 0
+	  	}
+	  	
+	  	for title in ["Band width", "Band offset"]:  
+		    gc.gridx = 0  
+		    gc.anchor = GBC.EAST  
+		    label = JLabel(title + ": ")  
+		    gb.setConstraints(label, gc)
+		    panel.add(label)
+	
+		    gc.gridx = 1
+		    gc.anchor = GBC.WEST
+		    text = str(background_defaults[title]) 
+		    textfield = JTextField(text, 10)
+		    textfields[title] = textfield
+		    gb.setConstraints(textfield, gc)
+		    textfield.getDocument().addDocumentListener(bg_listener)
+		    panel.add(textfield)
+		    gc.gridy += 1
 
 	gc.gridx = 0
 	button = JButton("<< Back", actionPerformed=bg_listener.revertToPrevStep)
